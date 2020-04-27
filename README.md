@@ -1,4 +1,7 @@
-# torch-mfa
+# torch-mfa-missing
+
+Working copy of the repository: https://github.com/eitanrich/torch-mfa
+
 A pytorch library for fast training and inference of low-rank-plus-diagonal high-dimensional Gaussians Mixture Models.
 
 This is a pytorch implementation based on the NeurIPS 2018 paper [On GANs and GMMs](https://arxiv.org/abs/1805.12462) by Eitan Richardson and Yair Weiss. The official TensorFlow code for reprodicing the paper results is [here](https://github.com/eitanrich/gans-n-gmms). This repository contains a faster (and cleaner) implementation of the MFA/MPPCA model with EM training.
