@@ -171,12 +171,11 @@ class MFA(torch.nn.Module):
         L = torch.eye(l, device=A.device).reshape(1, l, l) + AT @ (iD * A)
         iL = torch.inverse(L)
 
-        x_c = (x - MU).reshape(n, 1, d).transpose(1,2)  # shape = (d, n)
+        x_c = (x - MU).reshape(n, 1, d).transpose(1,2)  
         m_d_1 = (iD * x_c) - ((iD * A) @ iL) @ (AT @ (iD * x_c))
         m_d = torch.sum(x_c * m_d_1, dim=1)
 
 
-        # m_d = torch.stack([per_component_md(i) for i in range(K)])
         det_L = torch.logdet(L)
         log_det_Sigma = det_L - torch.sum(torch.log(iD.reshape(n, d)), axis=1)
         log_prob_data_given_components = -0.5 * ((d * np.log(2.0 * math.pi) + log_det_Sigma).reshape(n, 1) + m_d)
@@ -222,7 +221,7 @@ class MFA(torch.nn.Module):
         A_hat[:, ~mask] = C
 
         log_likelihood = self.log_likelihood_missing(original_full_samples[:, ~mask], x_hat[:, ~mask], C, torch.log(D_a))
-        
+
         #Sigma = C @ C.transpose(1,2) + D_a - wyestymowane Sigma
         #kolejno zwracam: wypełnienie brakujących sampli średnimi, średnie, A dla Sigma, D dla Sigma, wypełenienie pełnych A poprzez wyestymowane A (powiększone o 0.5)
         return x_hat, x_hat[:, ~mask], C, D_a, 0.5 + A_hat, log_likelihood
