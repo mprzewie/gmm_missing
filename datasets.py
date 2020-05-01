@@ -81,21 +81,32 @@ def mnist_train_val_datasets(
         mask_configs: Sequence[RandomRectangleMaskConfig] = DEFAULT_MNIST_MASK_CONFIGS,
         ds_type: MNIST = MNIST,
         resize_size: Tuple[int, int] = (28, 28),
-        deterministic: bool = True,
+        with_mask: bool = True
+
 ) -> Tuple[MNIST, MNIST]:
     base_transform = tr.Compose([tr.Resize(resize_size), tr.ToTensor()])
-    train_transform = tr.Compose(
-        [
-            base_transform,
+
+    train_transform = [
+        base_transform
+    ]
+
+
+    if with_mask:
+        train_transform.append(
             tr.Lambda(
-                random_mask_fn(mask_configs=mask_configs, deterministic=deterministic)
-            ),
-        ]
+                random_mask_fn(mask_configs=mask_configs, deterministic=True)
+            )
+        )
+
+
+    train_transform = tr.Compose(
+        train_transform
     )
 
-    val_transform = tr.Compose(
-        [
-            base_transform,
+    val_transform = [base_transform]
+
+    if with_mask:
+        val_transform.append(
             tr.Lambda(
                 random_mask_fn(
                     mask_configs=[
@@ -103,11 +114,11 @@ def mnist_train_val_datasets(
                         for m in mask_configs
                         if m.value == UNKNOWN_LOSS or m.value == KNOWN
                     ],  # only the mask which will be inpainted
-                    deterministic=deterministic,
+                    deterministic=True,
                 )
-            ),
-        ]
-    )
+            )
+        )
+    val_transform = tr.Compose(val_transform)
 
     ds_train = ds_type(save_path, train=True, download=True, transform=train_transform)
     ds_val = ds_type(save_path, train=False, download=True, transform=val_transform)
@@ -126,6 +137,7 @@ def celeba_train_val_datasets(
         mask_configs: Sequence[RandomRectangleMaskConfig] = DEFAULT_CELEBA_MASK_CONFIGS,
         resize_size: Tuple[int, int] = (120, 120),
         crop_size: Tuple[int, int] = (64, 64),
+        with_mask: bool = True
 ) -> Tuple[CelebA, CelebA]:
     base_transform = tr.Compose(
         [
@@ -136,18 +148,24 @@ def celeba_train_val_datasets(
         ]
     )
 
-    train_transform = tr.Compose(
-        [
-            base_transform,
+    train_transform = [
+        base_transform
+    ]
+    if with_mask:
+        train_transform.append(
             tr.Lambda(
                 random_mask_fn(mask_configs=mask_configs, deterministic=True)
-            ),
-        ]
-    )
+            )
+        )
 
-    val_transform = tr.Compose(
-        [
-            base_transform,
+    train_transform = tr.Compose(train_transform)
+
+    val_transform = [
+        base_transform,
+    ]
+
+    if with_mask:
+        val_transform.append(
             tr.Lambda(
                 random_mask_fn(
                     mask_configs=[
@@ -155,9 +173,10 @@ def celeba_train_val_datasets(
                     ],  # only the mask which will be inpainted
                     deterministic=False,
                 )
-            ),
-        ]
-    )
+            )
+        )
+
+    val_transform = tr.Compose(val_transform)
 
     ds_train = CelebA(
         save_path, split="train", download=True, transform=train_transform
