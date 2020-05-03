@@ -223,7 +223,8 @@ class MFA(torch.nn.Module):
         log_likelihood = self.log_likelihood_missing(original_full_samples[:, ~mask], x_hat[:, ~mask], C, torch.log(D_a))
 
         #Sigma = C @ C.transpose(1,2) + D_a - wyestymowane Sigma
-        #kolejno zwracam: wypełnienie brakujących sampli średnimi, średnie, A dla Sigma, D dla Sigma, wypełenienie pełnych A poprzez wyestymowane A (powiększone o 0.5)
+        #kolejno zwracam: 
+        # wypełnienie brakujących sampli średnimi, średnie, A dla Sigma, D dla Sigma, wypełenienie pełnych A poprzez wyestymowane A (powiększone o 0.5)
         return x_hat, x_hat[:, ~mask], C, D_a, 0.5 + A_hat, log_likelihood
 
     def reconstruct(self, full_x, observed_features=None):

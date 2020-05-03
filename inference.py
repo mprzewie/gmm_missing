@@ -6,6 +6,7 @@ from mfa import MFA
 from utils import *
 from imageio import imwrite
 from tqdm import tqdm
+from datasets import mnist_train_val_datasets, celeba_train_val_datasets
 
 """
 Examples for inference using the trained MFA model - likelihood evaluation and (conditional) reconstruction
@@ -29,11 +30,12 @@ if __name__ == "__main__":
         num_iterations = 10             # Number of EM iterations (=epochs)
         feature_sampling = 0.2          # For faster responsibilities calculation, randomly sample the coordinates (or False)
         mfa_sgd_epochs = 0              # Perform additional training with diagonal (per-pixel) covariance, using SGD
-        trans = transforms.Compose([CropTransform((25, 50, 25+128, 50+128)), transforms.Resize(image_shape[0]),
-                                    transforms.ToTensor(),  ReshapeTransform([-1])])
-        test_dataset = CelebA(root='./data', split='test', transform=trans, download=True)
+        # trans = transforms.Compose([CropTransform((25, 50, 25+128, 50+128)), transforms.Resize(image_shape[0]),
+        #                             transforms.ToTensor(),  ReshapeTransform([-1])])
+        # test_dataset = CelebA(root='./data', split='test', transform=trans, download=True)
         # The train set has more interesting outliers...
         # test_dataset = CelebA(root='./data', split='train', transform=trans, download=True)
+        train_dataset, test_dataset = mnist_train_val_datasets(with_mask=True)
     elif dataset == 'mnist':
         image_shape = [28, 28]  # The input image shape
         n_components = 50  # Number of components in the mixture model
@@ -43,13 +45,16 @@ if __name__ == "__main__":
         feature_sampling = False  # For faster responsibilities calculation, randomly sample the coordinates (or False)
         mfa_sgd_epochs = 0  # Perform additional training with diagonal (per-pixel) covariance, using SGD
         # init_method = 'kmeans'  # Initialize by using k-means clustering
-        trans = transforms.Compose([transforms.ToTensor(), ReshapeTransform([-1])])
-        # train_set = MNIST(root='./data', train=True, transform=trans, download=True)
-        test_dataset = MNIST(root='./data', train=False, transform=trans, download=True)
+        # trans = transforms.Compose([transforms.ToTensor(), ReshapeTransform([-1])])
+        # # train_set = MNIST(root='./data', train=True, transform=trans, download=True)
+        # test_dataset = MNIST(root='./data', train=False, transform=trans, download=True)
+        train_dataset, test_dataset = mnist_train_val_datasets(with_mask=True)
+
     else:
         assert False, 'Unknown dataset: ' + dataset
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    device = torch.device("cpu")
     model_dir = './models/' + dataset
     figures_dir = './figures/' + dataset
     os.makedirs(figures_dir, exist_ok=True)
@@ -78,23 +83,38 @@ if __name__ == "__main__":
 
     if reconstruction:
         print('Reconstructing images from the trained model...')
-        random_samples, _ = zip(*[test_dataset[k] for k in RandomSampler(test_dataset, replacement=True, num_samples=100)])
+        random_samples_with_masks, _ = zip(*[test_dataset[k] for k in RandomSampler(test_dataset, replacement=True, num_samples=100)])
+
+        random_samples = [
+            rs[0] for rs in random_samples_with_masks
+        ]
+        masks = [
+            rs[1] for rs in random_samples_with_masks
+        ]
+
         random_samples = torch.stack(random_samples)
+        masks = torch.stack(masks)
+        # print(random_samples.shape, mask.shape)
 
         if inpainting:
             if dataset == "mnist":
                 # Hide part of each image
-                w = image_shape[0]
-                mask = np.ones([w, w], dtype=np.float32)
-                # mask[:, w//4:-w//4, w//4:-w//4] = 0
-                # mask[:, w // 2:] = 0
-                mask[3:w // 2+3, 3:w // 2+3] = 0
-                mask = torch.from_numpy(mask.flatten()).reshape([1, -1])
+
                 original_full_samples = random_samples.clone()
-                random_samples *= mask
-                used_features = torch.nonzero(mask.flatten()).flatten()
-                reconstructed_samples, means_samples, A_samples, D_samples, reconstructed_A = model.conditional_reconstruct(random_samples.to(device),
-                                                                      observed_features=used_features, original_full_samples = original_full_samples)#.cpu()
+                random_samples *= masks
+
+                reconstructed_samples = []
+                for samp, msk, orig, in tqdm(zip(random_samples, masks, original_full_samples)):
+                    used_features = torch.nonzero(msk.flatten()).flatten()
+
+                    rec_samp, means_samples, A_samples, D_samples, reconstructed_A, log_likelihood = model.conditional_reconstruct(
+                        samp.to(device).unsqueeze(0),
+                        observed_features=used_features, 
+                        original_full_samples = orig.unsqueeze(0)
+                    )#.cpu()
+
+                    reconstructed_samples.append(rec_samp)
+                reconstructed_samples = torch.stack(reconstructed_samples).squeeze()
 
             else:
                 # Hide part of each image
@@ -111,7 +131,7 @@ if __name__ == "__main__":
             reconstructed_samples = model.reconstruct(random_samples.to(device)).cpu()
 
         if inpainting:
-            reconstructed_samples = random_samples * mask + reconstructed_samples * (1 - mask)
+            reconstructed_samples = random_samples * masks + reconstructed_samples * (1 - masks)
 
         mosaic_original = samples_to_mosaic(random_samples, image_shape=image_shape)
         imwrite(os.path.join(figures_dir, 'original_samples.jpg'), mosaic_original)

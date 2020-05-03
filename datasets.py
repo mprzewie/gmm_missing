@@ -92,12 +92,20 @@ def mnist_train_val_datasets(
 
 
     if with_mask:
-        train_transform.append(
+        train_transform.extend([
             tr.Lambda(
                 random_mask_fn(mask_configs=mask_configs, deterministic=True)
+            ),
+            tr.Lambda(
+                lambda x_j: (x_j[0].reshape(-1), x_j[1].reshape(-1))
+            )
+        ])
+    else:
+        train_transform.append(
+            tr.Lambda(
+                lambda x: x.reshape(-1)
             )
         )
-
 
     train_transform = tr.Compose(
         train_transform
@@ -106,7 +114,7 @@ def mnist_train_val_datasets(
     val_transform = [base_transform]
 
     if with_mask:
-        val_transform.append(
+        val_transform.extend([
             tr.Lambda(
                 random_mask_fn(
                     mask_configs=[
@@ -116,8 +124,19 @@ def mnist_train_val_datasets(
                     ],  # only the mask which will be inpainted
                     deterministic=True,
                 )
+            ),
+            tr.Lambda(
+                lambda x_j: (x_j[0].reshape(-1), x_j[1].reshape(-1))
+            )
+        ])
+    else:
+        val_transform.append(
+            tr.Lambda(
+                lambda x: x.reshape(-1)
             )
         )
+    
+
     val_transform = tr.Compose(val_transform)
 
     ds_train = ds_type(save_path, train=True, download=True, transform=train_transform)
@@ -133,7 +152,7 @@ DEFAULT_CELEBA_MASK_CONFIGS = (
 
 
 def celeba_train_val_datasets(
-        save_path: Path,
+        save_path: Path = Path("/home/mprzewiezlikowski/uj/.data/"),
         mask_configs: Sequence[RandomRectangleMaskConfig] = DEFAULT_CELEBA_MASK_CONFIGS,
         resize_size: Tuple[int, int] = (120, 120),
         crop_size: Tuple[int, int] = (64, 64),
@@ -151,30 +170,53 @@ def celeba_train_val_datasets(
     train_transform = [
         base_transform
     ]
+
+
     if with_mask:
-        train_transform.append(
+        train_transform.extend([
             tr.Lambda(
                 random_mask_fn(mask_configs=mask_configs, deterministic=True)
+            ),
+            tr.Lambda(
+                lambda x_j: (x_j[0].reshape(-1), x_j[1].reshape(-1))
+            )
+        ])
+    else:
+        train_transform.append(
+            tr.Lambda(
+                lambda x: x.reshape(-1)
             )
         )
 
-    train_transform = tr.Compose(train_transform)
+    train_transform = tr.Compose(
+        train_transform
+    )
 
-    val_transform = [
-        base_transform,
-    ]
+    val_transform = [base_transform]
 
     if with_mask:
-        val_transform.append(
+        val_transform.extend([
             tr.Lambda(
                 random_mask_fn(
                     mask_configs=[
-                        m for m in mask_configs if m.value == UNKNOWN_LOSS
+                        m
+                        for m in mask_configs
+                        if m.value == UNKNOWN_LOSS or m.value == KNOWN
                     ],  # only the mask which will be inpainted
-                    deterministic=False,
+                    deterministic=True,
                 )
+            ),
+            tr.Lambda(
+                lambda x_j: (x_j[0].reshape(-1), x_j[1].reshape(-1))
+            )
+        ])
+    else:
+        val_transform.append(
+            tr.Lambda(
+                lambda x: x.reshape(-1)
             )
         )
+    
 
     val_transform = tr.Compose(val_transform)
 
