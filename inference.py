@@ -7,7 +7,7 @@ from utils import *
 from imageio import imwrite
 from tqdm import tqdm
 from datasets import mnist_train_val_datasets, celeba_train_val_datasets
-
+from sys import argv
 """
 Examples for inference using the trained MFA model - likelihood evaluation and (conditional) reconstruction
 """
@@ -16,7 +16,7 @@ Examples for inference using the trained MFA model - likelihood evaluation and (
 
 
 if __name__ == "__main__":
-    dataset = 'mnist'
+    dataset = dataset = argv[1] if len(argv) == 2 else 'mnist'
     find_outliers = False
     reconstruction = True
     inpainting = True
@@ -35,7 +35,7 @@ if __name__ == "__main__":
         # test_dataset = CelebA(root='./data', split='test', transform=trans, download=True)
         # The train set has more interesting outliers...
         # test_dataset = CelebA(root='./data', split='train', transform=trans, download=True)
-        train_dataset, test_dataset = mnist_train_val_datasets(with_mask=True)
+        train_dataset, test_dataset = celeba_train_val_datasets(with_mask=True)
     elif dataset == 'mnist':
         image_shape = [28, 28]  # The input image shape
         n_components = 50  # Number of components in the mixture model
@@ -65,7 +65,7 @@ if __name__ == "__main__":
         model.load_state_dict(
             torch.load(os.path.join(model_dir, 'model_c_{}_l_{}_init_kmeans.pth'.format(n_components, n_factors))))
     else:
-        model.load_state_dict(torch.load(os.path.join(model_dir, 'model_c_{}_l_{}.pth'.format(n_components, n_factors))))
+        model.load_state_dict(torch.load(os.path.join(model_dir, 'model_c_{}_l_{}_init_rnd_samples.pth'.format(n_components, n_factors))))
 
     if find_outliers:
         print('Finding dataset outliers...')
@@ -97,36 +97,36 @@ if __name__ == "__main__":
         # print(random_samples.shape, mask.shape)
 
         if inpainting:
-            if dataset == "mnist":
-                # Hide part of each image
+            # if dataset == "mnist":
+            # Hide part of each image
 
-                original_full_samples = random_samples.clone()
-                random_samples *= masks
+            original_full_samples = random_samples.clone()
+            random_samples *= masks
 
-                reconstructed_samples = []
-                for samp, msk, orig, in tqdm(zip(random_samples, masks, original_full_samples)):
-                    used_features = torch.nonzero(msk.flatten()).flatten()
+            reconstructed_samples = []
+            for samp, msk, orig, in tqdm(zip(random_samples, masks, original_full_samples)):
+                used_features = torch.nonzero(msk.flatten()).flatten()
 
-                    rec_samp, means_samples, A_samples, D_samples, reconstructed_A, log_likelihood = model.conditional_reconstruct(
-                        samp.to(device).unsqueeze(0),
-                        observed_features=used_features, 
-                        original_full_samples = orig.unsqueeze(0)
-                    )#.cpu()
+                rec_samp, means_samples, A_samples, D_samples, reconstructed_A, log_likelihood = model.conditional_reconstruct(
+                    samp.to(device).unsqueeze(0),
+                    observed_features=used_features, 
+                    original_full_samples = orig.unsqueeze(0)
+                )#.cpu()
 
-                    reconstructed_samples.append(rec_samp)
-                reconstructed_samples = torch.stack(reconstructed_samples).squeeze()
+                reconstructed_samples.append(rec_samp)
+            reconstructed_samples = torch.stack(reconstructed_samples).squeeze()
 
-            else:
-                # Hide part of each image
-                w = image_shape[0]
-                mask = np.ones([3, w, w], dtype=np.float32)
-                # mask[:, w//4:-w//4, w//4:-w//4] = 0
-                mask[:, :, w//2:] = 0
-                mask = torch.from_numpy(mask.flatten()).reshape([1, -1])
-                original_full_samples = random_samples.clone()
-                random_samples *= mask
-                used_features = torch.nonzero(mask.flatten()).flatten()
-                reconstructed_samples = model.conditional_reconstruct(random_samples.to(device), observed_features=used_features).cpu()
+            # else:
+            #     # Hide part of each image
+            #     w = image_shape[0]
+            #     mask = np.ones([3, w, w], dtype=np.float32)
+            #     # mask[:, w//4:-w//4, w//4:-w//4] = 0
+            #     mask[:, :, w//2:] = 0
+            #     mask = torch.from_numpy(mask.flatten()).reshape([1, -1])
+            #     original_full_samples = random_samples.clone()
+            #     random_samples *= mask
+            #     used_features = torch.nonzero(mask.flatten()).flatten()
+            #     reconstructed_samples = model.conditional_reconstruct(random_samples.to(device), observed_features=used_features).cpu()
         else:
             reconstructed_samples = model.reconstruct(random_samples.to(device)).cpu()
 
