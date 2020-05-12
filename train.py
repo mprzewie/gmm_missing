@@ -34,7 +34,9 @@ def main(argv):
         #                             transforms.ToTensor(),  ReshapeTransform([-1])])
         # train_set = CelebA(root='./data', split='train', transform=trans, download=True)
         # test_set = CelebA(root='./data', split='test', transform=trans, download=True)
-        train_set, test_set = celeba_train_val_datasets(with_mask=False)
+        train_set, test_set = celeba_train_val_datasets(
+            with_mask=False, 
+        )
     elif dataset == 'mnist':
         image_shape = [28, 28]          # The input image shape
         n_components = 50               # Number of components in the mixture model
@@ -56,7 +58,7 @@ def main(argv):
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     model_dir = './models/'+dataset
     os.makedirs(model_dir, exist_ok=True)
-    figures_dir = './figures/'+dataset
+    figures_dir = './figures/'+ f"{dataset}_{image_shape[0]}_{image_shape[1]}"
     os.makedirs(figures_dir, exist_ok=True)
     model_name = 'c_{}_l_{}_init_{}'.format(n_components, n_factors, init_method)
 

@@ -6,7 +6,7 @@ from mfa import MFA
 from utils import *
 from imageio import imwrite
 from tqdm import tqdm
-from datasets import mnist_train_val_datasets, celeba_train_val_datasets
+from datasets import mnist_train_val_datasets, celeba_train_val_datasets, RandomRectangleMaskConfig, UNKNOWN_LOSS
 from sys import argv
 """
 Examples for inference using the trained MFA model - likelihood evaluation and (conditional) reconstruction
@@ -35,7 +35,20 @@ if __name__ == "__main__":
         # test_dataset = CelebA(root='./data', split='test', transform=trans, download=True)
         # The train set has more interesting outliers...
         # test_dataset = CelebA(root='./data', split='train', transform=trans, download=True)
-        train_dataset, test_dataset = celeba_train_val_datasets(with_mask=True)
+
+        img_to_crop = 1.875
+        img_size = image_shape[0]
+        full_img_size = int(img_size * img_to_crop)
+        hidden_mask_size = img_size // 2
+        train_dataset, test_dataset = celeba_train_val_datasets(
+            with_mask=True,
+            mask_configs=[
+                RandomRectangleMaskConfig(UNKNOWN_LOSS, hidden_mask_size, hidden_mask_size)
+            ],
+            resize_size=(full_img_size, full_img_size),
+            crop_size=(img_size, img_size),
+
+        )
     elif dataset == 'mnist':
         image_shape = [28, 28]  # The input image shape
         n_components = 50  # Number of components in the mixture model
@@ -48,7 +61,15 @@ if __name__ == "__main__":
         # trans = transforms.Compose([transforms.ToTensor(), ReshapeTransform([-1])])
         # # train_set = MNIST(root='./data', train=True, transform=trans, download=True)
         # test_dataset = MNIST(root='./data', train=False, transform=trans, download=True)
-        train_dataset, test_dataset = mnist_train_val_datasets(with_mask=True)
+        img_size = image_shape[0]
+        hidden_mask_size = img_size // 2
+        train_dataset, test_dataset = mnist_train_val_datasets(
+            with_mask=True,
+             mask_configs=[
+                RandomRectangleMaskConfig(UNKNOWN_LOSS, hidden_mask_size, hidden_mask_size)
+            ],
+            resize_size=(img_size, img_size),
+        )
 
     else:
         assert False, 'Unknown dataset: ' + dataset
@@ -56,14 +77,18 @@ if __name__ == "__main__":
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     device = torch.device("cpu")
     model_dir = './models/' + dataset
-    figures_dir = './figures/' + dataset
+    figures_dir = './figures/'+ f"{dataset}_{image_shape[0]}_{image_shape[1]}"
     os.makedirs(figures_dir, exist_ok=True)
 
     print('Loading pre-trained MFA model...')
     model = MFA(n_components=n_components, n_features=np.prod(image_shape), n_factors=n_factors).to(device=device)
     if dataset == "mnist":
         model.load_state_dict(
-            torch.load(os.path.join(model_dir, 'model_c_{}_l_{}_init_kmeans.pth'.format(n_components, n_factors))))
+            torch.load(
+                os.path.join(model_dir, 'model_c_{}_l_{}_init_kmeans.pth'.format(n_components, n_factors)),
+                map_location=device
+                )
+            )
     else:
         model.load_state_dict(torch.load(os.path.join(model_dir, 'model_c_{}_l_{}_init_rnd_samples.pth'.format(n_components, n_factors))))
 
@@ -107,31 +132,25 @@ if __name__ == "__main__":
             for samp, msk, orig, in tqdm(zip(random_samples, masks, original_full_samples)):
                 used_features = torch.nonzero(msk.flatten()).flatten()
 
-                rec_samp, means_samples, A_samples, D_samples, reconstructed_A, log_likelihood = model.conditional_reconstruct(
+
+                rec_samp, means_samples, A_samples, D_samples, reconstructed_A, log_likelihood, _ = model.conditional_reconstruct(
                     samp.to(device).unsqueeze(0),
                     observed_features=used_features, 
                     original_full_samples = orig.unsqueeze(0)
                 )#.cpu()
 
+
+
                 reconstructed_samples.append(rec_samp)
             reconstructed_samples = torch.stack(reconstructed_samples).squeeze()
 
-            # else:
-            #     # Hide part of each image
-            #     w = image_shape[0]
-            #     mask = np.ones([3, w, w], dtype=np.float32)
-            #     # mask[:, w//4:-w//4, w//4:-w//4] = 0
-            #     mask[:, :, w//2:] = 0
-            #     mask = torch.from_numpy(mask.flatten()).reshape([1, -1])
-            #     original_full_samples = random_samples.clone()
-            #     random_samples *= mask
-            #     used_features = torch.nonzero(mask.flatten()).flatten()
-            #     reconstructed_samples = model.conditional_reconstruct(random_samples.to(device), observed_features=used_features).cpu()
+
         else:
             reconstructed_samples = model.reconstruct(random_samples.to(device)).cpu()
 
         if inpainting:
             reconstructed_samples = random_samples * masks + reconstructed_samples * (1 - masks)
+
 
         mosaic_original = samples_to_mosaic(random_samples, image_shape=image_shape)
         imwrite(os.path.join(figures_dir, 'original_samples.jpg'), mosaic_original)
@@ -141,3 +160,42 @@ if __name__ == "__main__":
         for d in range(6):
             mosaic_recontructed = samples_to_mosaic(reconstructed_A[:,:,d], image_shape=image_shape)
             imwrite(os.path.join(figures_dir, 'reconstructed_A' + str(d) + '.jpg'), mosaic_recontructed)
+
+
+if len(image_shape) == 2:
+    image_shape.append(1)
+
+to_dump = []
+for ((x, j), y) in tqdm(test_dataset):
+    used_features = torch.nonzero(j.flatten()).flatten()
+    x_masked = x * j
+    _, _, _, _, _, log_likelihood, (m_full, a_full, d_full) = model.conditional_reconstruct(
+       x_masked.to(device).unsqueeze(0),
+        observed_features=used_features, 
+        original_full_samples = x.unsqueeze(0)
+    )
+
+    
+    x_resh = x.reshape(list(reversed(image_shape)))
+    j_resh = j.reshape(list(reversed(image_shape)))
+    # print([
+    #     t.shape for t in [x_resh, j_resh, m_full, a_full, d_full]
+    # ])
+
+    to_dump.append(
+        (
+            x_resh.detach().cpu().numpy(), 
+            j_resh.detach().cpu().numpy(), 
+            np.array([1]), 
+            m_full.detach().cpu().numpy(), 
+            a_full.detach().cpu().numpy(), 
+            d_full.detach().cpu().numpy(), 
+            np.array([y, log_likelihood.item()])
+        )
+    )
+
+from pathlib import Path
+import pickle
+
+with (Path(model_dir) / "val_predictions.pkl").open("wb") as f:
+    pickle.dump(to_dump, f)

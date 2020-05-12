@@ -94,7 +94,7 @@ def mnist_train_val_datasets(
     if with_mask:
         train_transform.extend([
             tr.Lambda(
-                random_mask_fn(mask_configs=mask_configs, deterministic=True)
+                random_mask_fn(mask_configs=mask_configs, deterministic=False)
             ),
             tr.Lambda(
                 lambda x_j: (x_j[0].reshape(-1), x_j[1].reshape(-1))
@@ -175,7 +175,7 @@ def celeba_train_val_datasets(
     if with_mask:
         train_transform.extend([
             tr.Lambda(
-                random_mask_fn(mask_configs=mask_configs, deterministic=True)
+                random_mask_fn(mask_configs=mask_configs, deterministic=False)
             ),
             tr.Lambda(
                 lambda x_j: (x_j[0].reshape(-1), x_j[1].reshape(-1))
