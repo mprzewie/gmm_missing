@@ -82,7 +82,8 @@ if __name__ == "__main__":
         assert False, 'Unknown dataset: ' + dataset
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    device = torch.device("cpu")
+    # device = torch.device("cpu")
+    print(device)
     model_dir = './models/' + f"{dataset}_{image_shape[0]}_{image_shape[1]}"
     figures_dir = './figures/'+ f"{dataset}_{image_shape[0]}_{image_shape[1]}"
     os.makedirs(figures_dir, exist_ok=True)
@@ -130,8 +131,8 @@ if __name__ == "__main__":
             rs[1] for rs in random_samples_with_masks
         ]
 
-        random_samples = torch.stack(random_samples)
-        masks = torch.stack(masks)
+        random_samples = torch.stack(random_samples).to(device)
+        masks = torch.stack(masks).to(device)
         # print(random_samples.shape, mask.shape)
 
         if inpainting:
@@ -147,7 +148,7 @@ if __name__ == "__main__":
 
 
                 rec_samp, means_samples, A_samples, D_samples, reconstructed_A, log_likelihood, _ = model.conditional_reconstruct(
-                    samp.to(device).unsqueeze(0),
+                    samp.unsqueeze(0),
                     observed_features=used_features, 
                     original_full_samples = orig.unsqueeze(0)
                 )#.cpu()
@@ -180,20 +181,22 @@ if len(image_shape) == 2:
 
 to_dump = []
 for ((x, j), y) in tqdm(test_dataset):
+    x, j = [t.to(device) for t in [x, j]]
     used_features = torch.nonzero(j.flatten()).flatten()
+
     x_masked = x * j
+
+    
     _, _, _, _, _, log_likelihood, (m_full, a_full, d_full) = model.conditional_reconstruct(
-       x_masked.to(device).unsqueeze(0),
+        x_masked.unsqueeze(0),
         observed_features=used_features, 
         original_full_samples = x.unsqueeze(0)
     )
 
-    
     x_resh = x.reshape(list(reversed(image_shape)))
     j_resh = j.reshape(list(reversed(image_shape)))
-    # print([
-    #     t.shape for t in [x_resh, j_resh, m_full, a_full, d_full]
-    # ])
+
+    print("sh", [t.shape for t in [x_masked, x, j_resh, m_full, a_full, d_full]])
     to_dump.append(
         (
             x_resh.detach().cpu().numpy(), 
