@@ -8,7 +8,10 @@ from utils import CropTransform, ReshapeTransform, samples_to_mosaic, visualize_
 from matplotlib import pyplot as plt
 from imageio import imwrite
 from packaging import version
-from datasets import mnist_train_val_datasets, celeba_train_val_datasets
+from datasets import mnist_train_val_datasets, celeba_train_val_datasets, RandomRectangleMaskConfig, UNKNOWN_LOSS
+from torchvision.datasets import MNIST, CelebA, FashionMNIST
+
+
 """
 MFA model training (data fitting) example.
 Note that actual EM (and SGD) training code are part of the MFA class itself.
@@ -18,9 +21,9 @@ Note that actual EM (and SGD) training code are part of the MFA class itself.
 def main(argv):
     assert version.parse(torch.__version__) >= version.parse('1.2.0')
 
-    dataset = argv[1] if len(argv) == 2 else 'celeba'
+    dataset = argv[1] if len(argv) >= 2 else 'celeba'
     print('Preparing dataset and parameters for', dataset, '...')
-
+    
     if dataset == 'celeba':
         image_shape = [64, 64, 3]       # The input image shape
         n_components = 300              # Number of components in the mixture model
@@ -34,10 +37,20 @@ def main(argv):
         #                             transforms.ToTensor(),  ReshapeTransform([-1])])
         # train_set = CelebA(root='./data', split='train', transform=trans, download=True)
         # test_set = CelebA(root='./data', split='test', transform=trans, download=True)
+        img_to_crop = 1.875
+        img_size = image_shape[0]
+        full_img_size = int(img_size * img_to_crop)
+        hidden_mask_size = img_size // 2
         train_set, test_set = celeba_train_val_datasets(
-            with_mask=False, 
+            with_mask=False,
+            mask_configs=[
+                RandomRectangleMaskConfig(UNKNOWN_LOSS, hidden_mask_size, hidden_mask_size)
+            ],
+            resize_size=(full_img_size, full_img_size),
+            crop_size=(img_size, img_size),
+
         )
-    elif dataset == 'mnist':
+    elif 'mnist' in dataset:
         image_shape = [28, 28]          # The input image shape
         n_components = 50               # Number of components in the mixture model
         n_factors = 6                   # Number of factors - the latent dimension (same for all components)
@@ -49,14 +62,22 @@ def main(argv):
         # trans = transforms.Compose([transforms.ToTensor(),  ReshapeTransform([-1])])
         # train_set = MNIST(root='./data', train=True, transform=trans, download=True)
         # test_set = MNIST(root='./data', train=False, transform=trans, download=True)
-        train_set, test_set = mnist_train_val_datasets(with_mask=False)
-
+        img_size = image_shape[0]
+        hidden_mask_size = img_size // 2
+        train_set, test_set = mnist_train_val_datasets(
+            ds_type=FashionMNIST if dataset == "fashion_mnist" else MNIST,
+            with_mask=False,
+             mask_configs=[
+                RandomRectangleMaskConfig(UNKNOWN_LOSS, hidden_mask_size, hidden_mask_size)
+            ],
+            resize_size=(img_size, img_size),
+        )
     else:
         assert False, 'Unknown dataset: ' + dataset
 
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
-    model_dir = './models/'+dataset
+    model_dir = './models/'+f"{dataset}_{image_shape[0]}_{image_shape[1]}"
     os.makedirs(model_dir, exist_ok=True)
     figures_dir = './figures/'+ f"{dataset}_{image_shape[0]}_{image_shape[1]}"
     os.makedirs(figures_dir, exist_ok=True)

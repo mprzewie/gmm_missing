@@ -9,7 +9,7 @@ from typing import Sequence, Tuple
 import numpy as np
 import torch
 
-from torchvision.datasets import MNIST, CelebA
+from torchvision.datasets import MNIST, CelebA, FashionMNIST
 from torchvision import transforms as tr
 
 # annotations in mask
@@ -147,7 +147,6 @@ def mnist_train_val_datasets(
 
 DEFAULT_CELEBA_MASK_CONFIGS = (
     RandomRectangleMaskConfig(UNKNOWN_LOSS, 32, 32, 0, 0),
-    # RandomRectangleMaskConfig(UNKNOWN_NO_LOSS, 15, 15, 0, 0),
 )
 
 

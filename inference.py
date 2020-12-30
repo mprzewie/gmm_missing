@@ -8,6 +8,8 @@ from imageio import imwrite
 from tqdm import tqdm
 from datasets import mnist_train_val_datasets, celeba_train_val_datasets, RandomRectangleMaskConfig, UNKNOWN_LOSS
 from sys import argv
+from torchvision.datasets import MNIST, CelebA, FashionMNIST
+
 """
 Examples for inference using the trained MFA model - likelihood evaluation and (conditional) reconstruction
 """
@@ -16,14 +18,16 @@ Examples for inference using the trained MFA model - likelihood evaluation and (
 
 
 if __name__ == "__main__":
-    dataset = dataset = argv[1] if len(argv) == 2 else 'mnist'
+    print(argv)
+    dataset = dataset = argv[1] if len(argv) >= 2 else 'mnist'
     find_outliers = False
     reconstruction = True
     inpainting = True
+    mask_h, mask_w = [int(a)  for a in argv[2:4]] if len(argv) >= 4 else (None, None)
 
     print('Preparing dataset and parameters for', dataset, '...')
     if dataset == 'celeba':
-        image_shape = [64, 64, 3]       # The input image shape
+        image_shape = [32, 32, 3]       # The input image shape
         n_components = 300              # Number of components in the mixture model
         n_factors = 10                  # Number of factors - the latent dimension (same for all components)
         batch_size = 128                # The EM batch size
@@ -39,17 +43,18 @@ if __name__ == "__main__":
         img_to_crop = 1.875
         img_size = image_shape[0]
         full_img_size = int(img_size * img_to_crop)
-        hidden_mask_size = img_size // 2
+        mask_h = mask_h or img_size // 2
+        mask_w = mask_w or img_size // 2
         train_dataset, test_dataset = celeba_train_val_datasets(
             with_mask=True,
             mask_configs=[
-                RandomRectangleMaskConfig(UNKNOWN_LOSS, hidden_mask_size, hidden_mask_size)
+                RandomRectangleMaskConfig(UNKNOWN_LOSS, mask_h, mask_w)
             ],
             resize_size=(full_img_size, full_img_size),
             crop_size=(img_size, img_size),
 
         )
-    elif dataset == 'mnist':
+    elif 'mnist' in dataset:
         image_shape = [28, 28]  # The input image shape
         n_components = 50  # Number of components in the mixture model
         n_factors = 6  # Number of factors - the latent dimension (same for all components)
@@ -62,11 +67,13 @@ if __name__ == "__main__":
         # # train_set = MNIST(root='./data', train=True, transform=trans, download=True)
         # test_dataset = MNIST(root='./data', train=False, transform=trans, download=True)
         img_size = image_shape[0]
-        hidden_mask_size = img_size // 2
+        mask_h = mask_h or img_size // 2
+        mask_w = mask_w or img_size // 2        
         train_dataset, test_dataset = mnist_train_val_datasets(
+            ds_type=FashionMNIST if dataset == "fashion_mnist" else MNIST,
             with_mask=True,
              mask_configs=[
-                RandomRectangleMaskConfig(UNKNOWN_LOSS, hidden_mask_size, hidden_mask_size)
+                RandomRectangleMaskConfig(UNKNOWN_LOSS, mask_h, mask_w)
             ],
             resize_size=(img_size, img_size),
         )
@@ -76,13 +83,13 @@ if __name__ == "__main__":
 
     device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     device = torch.device("cpu")
-    model_dir = './models/' + dataset
+    model_dir = './models/' + f"{dataset}_{image_shape[0]}_{image_shape[1]}"
     figures_dir = './figures/'+ f"{dataset}_{image_shape[0]}_{image_shape[1]}"
     os.makedirs(figures_dir, exist_ok=True)
 
     print('Loading pre-trained MFA model...')
     model = MFA(n_components=n_components, n_features=np.prod(image_shape), n_factors=n_factors).to(device=device)
-    if dataset == "mnist":
+    if "mnist" in dataset:
         model.load_state_dict(
             torch.load(
                 os.path.join(model_dir, 'model_c_{}_l_{}_init_kmeans.pth'.format(n_components, n_factors)),
@@ -90,7 +97,13 @@ if __name__ == "__main__":
                 )
             )
     else:
-        model.load_state_dict(torch.load(os.path.join(model_dir, 'model_c_{}_l_{}_init_rnd_samples.pth'.format(n_components, n_factors))))
+        model.load_state_dict(
+            torch.load(
+                os.path.join(model_dir, 'model_c_{}_l_{}_init_rnd_samples.pth'.format(n_components, n_factors)),
+                map_location=device
+
+                )
+            )
 
     if find_outliers:
         print('Finding dataset outliers...')
@@ -108,7 +121,7 @@ if __name__ == "__main__":
 
     if reconstruction:
         print('Reconstructing images from the trained model...')
-        random_samples_with_masks, _ = zip(*[test_dataset[k] for k in RandomSampler(test_dataset, replacement=True, num_samples=100)])
+        random_samples_with_masks, _ = zip(*[test_dataset[k] for k in RandomSampler(test_dataset, replacement=True, num_samples=25)])
 
         random_samples = [
             rs[0] for rs in random_samples_with_masks
@@ -181,7 +194,6 @@ for ((x, j), y) in tqdm(test_dataset):
     # print([
     #     t.shape for t in [x_resh, j_resh, m_full, a_full, d_full]
     # ])
-
     to_dump.append(
         (
             x_resh.detach().cpu().numpy(), 
@@ -190,12 +202,17 @@ for ((x, j), y) in tqdm(test_dataset):
             m_full.detach().cpu().numpy(), 
             a_full.detach().cpu().numpy(), 
             d_full.detach().cpu().numpy(), 
-            np.array([y, log_likelihood.item()])
+            (
+                np.array([
+                    y if "mnist" in dataset else 0
+                ]), 
+                log_likelihood.sum().item()
+            )
         )
     )
 
 from pathlib import Path
 import pickle
 
-with (Path(model_dir) / "val_predictions.pkl").open("wb") as f:
+with (Path(model_dir) / f"val_predictions_{mask_h}x{mask_w}.pkl").open("wb") as f:
     pickle.dump(to_dump, f)
